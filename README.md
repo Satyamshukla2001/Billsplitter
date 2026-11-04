@@ -2,10 +2,6 @@
 
 A simple app for managing household expenses. Create homes, add housemates, split bills, record payments, and track what each person still owes.
 
-## Acknowledgement
-
-This project was built from the SDE Intern Assignment starter template. The starter template's original commit was authored by [Ritik Joshi (@ritik6559)](https://github.com/ritik6559).
-
 ## Run the app
 
 You need [Node.js 24](https://nodejs.org/) and [pnpm 12](https://pnpm.io/installation).

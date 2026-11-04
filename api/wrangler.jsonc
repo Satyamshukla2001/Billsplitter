@@ -1,0 +1,24 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "bill-splitter-api",
+  "main": "src/index.ts",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": {
+    "CF_ACCESS_TEAM_DOMAIN": "",
+    "CF_ACCESS_AUD": ""
+  },
+  "compatibility_date": "2026-05-22",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "bill-splitter",
+      "database_id": "local-only",
+      "migrations_dir": "migrations"
+    }
+  ]
+}

@@ -1,18 +1,34 @@
 import { Hono } from 'hono'
+import { fetchInrExchangeRates, requireCurrencyCode } from '../lib/currency'
 import {
   type AppEnv,
   fail,
   readJsonObject,
+  requireBillTitle,
   requireIdempotencyKey,
-  requireTitle,
   requireTotalCents,
 } from '../lib/http'
 
 type ShareRow = { id: string; memberId: string; amountCents: number; paidAt: string | null }
-type BillRow = { id: string; homeId: string; title: string; totalCents: number }
+type BillRow = {
+  id: string
+  homeId: string
+  title: string
+  totalCents: number
+  currencyCode: string
+}
 type ShareWithBill = ShareRow & { billId: string }
 
 export const bills = new Hono<AppEnv>()
+
+bills.get('/exchange-rates', async (c) => {
+  try {
+    return c.json(await fetchInrExchangeRates())
+  } catch (error) {
+    console.error('Failed to retrieve exchange rates', error)
+    return fail(503, 'Exchange rates are unavailable. Try again later.')
+  }
+})
 
 async function homeExists(db: D1Database, homeId: string, ownerEmail: string): Promise<boolean> {
   const row = await db
@@ -29,8 +45,9 @@ bills.post('/homes/:homeId/bills', async (c) => {
   if (!(await homeExists(db, homeId, c.get('userEmail')))) return fail(404, 'Home not found')
 
   const body = await readJsonObject(c)
-  const title = requireTitle(body.title)
+  const title = requireBillTitle(body.title)
   const totalCents = requireTotalCents(body.totalCents)
+  const currencyCode = requireCurrencyCode(body.currencyCode ?? 'INR')
   if (typeof body.memberId !== 'string' || body.memberId.length === 0) {
     return fail(422, 'Choose a member from this home')
   }
@@ -53,8 +70,10 @@ bills.post('/homes/:homeId/bills', async (c) => {
   // One batch = one transaction: either the bill and all its shares exist, or nothing does.
   await db.batch([
     db
-      .prepare('INSERT INTO bills (id, home_id, title, total_cents) VALUES (?, ?, ?, ?)')
-      .bind(billId, homeId, title, totalCents),
+      .prepare(
+        'INSERT INTO bills (id, home_id, title, total_cents, currency_code) VALUES (?, ?, ?, ?, ?)',
+      )
+      .bind(billId, homeId, title, totalCents, currencyCode),
     ...shares.map((share) =>
       db
         .prepare(
@@ -64,7 +83,7 @@ bills.post('/homes/:homeId/bills', async (c) => {
     ),
   ])
 
-  return c.json({ id: billId, homeId, title, totalCents, shares }, 201)
+  return c.json({ id: billId, homeId, title, totalCents, currencyCode, shares }, 201)
 })
 
 /** List the bills of a home (newest first), each with its shares in member order. */
@@ -76,7 +95,7 @@ bills.get('/homes/:homeId/bills', async (c) => {
   const [billRows, shareRows] = await db.batch<BillRow | ShareWithBill>([
     db
       .prepare(
-        `SELECT b.id, b.home_id AS homeId, b.title,
+        `SELECT b.id, b.home_id AS homeId, b.title, b.currency_code AS currencyCode,
                 SUM(s.amount_cents) AS totalCents
            FROM bills b
            JOIN shares s ON s.bill_id = b.id AND s.home_id = b.home_id

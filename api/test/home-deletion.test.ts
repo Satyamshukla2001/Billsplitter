@@ -103,7 +103,7 @@ describe('home and member deletion', () => {
     for (const [index, member] of members.entries()) {
       await call('POST', `/api/homes/${home.body.id}/bills`, {
         body: {
-          title: `${member.name} groceries`,
+          title: 'Groceries',
           totalCents: (index + 1) * 1000,
           memberId: member.id,
         },
@@ -122,14 +122,17 @@ describe('home and member deletion', () => {
       bills: { title: string; totalCents: number; shares: { memberId: string }[] }[]
     }>('GET', `/api/homes/${home.body.id}/bills`)
     expect(bills.body.bills).toHaveLength(2)
-    expect(bills.body.bills.map((bill) => bill.title).sort()).toEqual([
-      'Asha groceries',
-      'Ben groceries',
-    ])
     expect(bills.body.bills.reduce((total, bill) => total + bill.totalCents, 0)).toBe(3000)
     expect(
       bills.body.bills.flatMap((bill) => bill.shares.map((share) => share.memberId)).sort(),
     ).toEqual([members[0]?.id, members[1]?.id].sort())
+
+    const homes = await call<{
+      homes: { id: string; totalsByCurrency: { currencyCode: string; amountCents: number }[] }[]
+    }>('GET', '/api/homes')
+    expect(homes.body.homes.find((row) => row.id === home.body.id)?.totalsByCurrency).toEqual([
+      { currencyCode: 'INR', amountCents: 3000 },
+    ])
   })
 
   it('returns 404 when the member does not exist in the home', async () => {

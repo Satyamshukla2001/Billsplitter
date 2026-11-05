@@ -102,6 +102,11 @@ button {
   gap: 12px;
 }
 
+.home-total {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
 .delete-action {
   display: flex;
   flex-direction: column;

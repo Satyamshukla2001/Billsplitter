@@ -4,10 +4,10 @@ import { HTTPException } from 'hono/http-exception'
 export type AppEnv = { Bindings: Env; Variables: { userEmail: string } }
 
 const MAX_NAME_LENGTH = 100
-const MAX_TITLE_LENGTH = 200
 const MAX_KEY_LENGTH = 255
+const BILL_TITLES = ['Rent', 'Electricity', 'Water', 'Internet', 'Groceries', 'Gas'] as const
 
-export function fail(status: 400 | 404 | 409 | 422, message: string): never {
+export function fail(status: 400 | 404 | 409 | 422 | 503, message: string): never {
   throw new HTTPException(status, { message })
 }
 
@@ -37,7 +37,21 @@ function requireText(value: unknown, field: string, maxLength: number): string {
 }
 
 export const requireName = (value: unknown) => requireText(value, 'name', MAX_NAME_LENGTH)
-export const requireTitle = (value: unknown) => requireText(value, 'title', MAX_TITLE_LENGTH)
+export function requireMemberName(value: unknown): string {
+  const name = requireText(value, 'name', MAX_NAME_LENGTH)
+  if (!/^(?:\p{L}\p{M}*)+(?:\s+(?:\p{L}\p{M}*)+)*$/u.test(name)) {
+    return fail(422, 'Member names can contain letters and spaces only')
+  }
+  return name
+}
+
+export function requireBillTitle(value: unknown): string {
+  const title = requireText(value, 'title', 200)
+  if (!BILL_TITLES.some((allowedTitle) => allowedTitle === title)) {
+    return fail(422, 'Choose a bill title from the available options')
+  }
+  return title
+}
 
 /** Money must be a positive whole number of cents. Strings, decimals, 0 and negatives are rejected. */
 export function requireTotalCents(value: unknown): number {

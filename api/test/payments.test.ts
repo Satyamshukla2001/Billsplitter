@@ -49,7 +49,10 @@ describe('pay a share', () => {
     expect(second.status).toBe(200)
     expect(second.body.paidAt).toBe(first.body.paidAt)
     const outstanding = await balances(homeId)
-    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([0, 0])
+    expect(outstanding.body.balances.map((balance) => balance.outstandingByCurrency)).toEqual([
+      [],
+      [],
+    ])
   })
 
   it('rejects a second payment of an already paid share with a different key', async () => {
@@ -86,8 +89,12 @@ describe('balances', () => {
 
     expect(outstanding.status).toBe(200)
     expect(outstanding.body.balances).toEqual([
-      { memberId: members[0]?.id, name: 'Asha', outstandingCents: 1000 },
-      { memberId: members[1]?.id, name: 'Ben', outstandingCents: 0 },
+      {
+        memberId: members[0]?.id,
+        name: 'Asha',
+        outstandingByCurrency: [{ currencyCode: 'INR', amountCents: 1000 }],
+      },
+      { memberId: members[1]?.id, name: 'Ben', outstandingByCurrency: [] },
     ])
   })
 
@@ -98,7 +105,10 @@ describe('balances', () => {
 
     const outstanding = await balances(homeId)
 
-    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([0, 300])
+    expect(outstanding.body.balances.map((balance) => balance.outstandingByCurrency)).toEqual([
+      [],
+      [{ currencyCode: 'INR', amountCents: 300 }],
+    ])
   })
 
   it('returns 404 when the home does not exist', async () => {

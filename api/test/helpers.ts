@@ -6,10 +6,16 @@ export type Bill = {
   homeId: string
   title: string
   totalCents: number
+  currencyCode: CurrencyCode
   shares: Share[]
 }
 export type Member = { id: string; homeId: string; name: string }
-export type Balance = { memberId: string; name: string; outstandingCents: number }
+export type CurrencyCode = 'USD' | 'INR' | 'EUR' | 'GBP' | 'CAD' | 'AUD' | 'JPY' | 'AED'
+export type Balance = {
+  memberId: string
+  name: string
+  outstandingByCurrency: { currencyCode: CurrencyCode; amountCents: number }[]
+}
 
 export async function call<Body = unknown>(
   method: 'GET' | 'POST',
@@ -50,7 +56,12 @@ export async function createHome(memberNames: string[]) {
   return { homeId: home.body.id, members }
 }
 
-export async function createBill(homeId: string, totalCents: number, memberId?: string) {
+export async function createBill(
+  homeId: string,
+  totalCents: number,
+  memberId?: string,
+  currencyCode: CurrencyCode = 'INR',
+) {
   let selectedMemberId = memberId
   if (selectedMemberId === undefined) {
     const home = await call<{ members: Member[] }>('GET', `/api/homes/${homeId}`)
@@ -61,6 +72,7 @@ export async function createBill(homeId: string, totalCents: number, memberId?: 
     body: {
       title: 'Electricity',
       totalCents,
+      currencyCode,
       ...(selectedMemberId === undefined ? {} : { memberId: selectedMemberId }),
     },
   })

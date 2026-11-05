@@ -1,7 +1,20 @@
 import { Hono } from 'hono'
-import { type AppEnv, fail, readJsonObject, requireName } from '../lib/http'
+import type { CurrencyCode } from '../lib/currency'
+import { type AppEnv, fail, readJsonObject, requireMemberName, requireName } from '../lib/http'
 
 type MemberRow = { id: string; homeId: string; name: string }
+type HomeTotalRow = {
+  id: string
+  name: string
+  currencyCode: CurrencyCode
+  amountCents: number
+}
+type BalanceCurrencyRow = {
+  memberId: string
+  name: string
+  currencyCode: CurrencyCode
+  outstandingCents: number
+}
 
 export const homes = new Hono<AppEnv>()
 
@@ -15,11 +28,39 @@ async function homeExists(db: D1Database, homeId: string, ownerEmail: string): P
 
 homes.get('/', async (c) => {
   const { results } = await c.env.DB.prepare(
-    'SELECT id, name FROM homes WHERE owner_email = ? ORDER BY created_at DESC, rowid DESC',
+    `SELECT h.id, h.name,
+            COALESCE(b.currency_code, 'INR') AS currencyCode,
+            COALESCE(SUM(s.amount_cents), 0) AS amountCents
+       FROM homes h
+       LEFT JOIN shares s ON s.home_id = h.id
+       LEFT JOIN bills b ON b.id = s.bill_id
+      WHERE h.owner_email = ?
+      GROUP BY h.id, b.currency_code
+      ORDER BY h.created_at DESC, h.rowid DESC, currencyCode`,
   )
     .bind(c.get('userEmail'))
-    .all<{ id: string; name: string }>()
-  return c.json({ homes: results })
+    .all<HomeTotalRow>()
+  const homesById = new Map<
+    string,
+    {
+      id: string
+      name: string
+      totalsByCurrency: { currencyCode: CurrencyCode; amountCents: number }[]
+    }
+  >()
+  for (const row of results) {
+    const home = homesById.get(row.id) ?? {
+      id: row.id,
+      name: row.name,
+      totalsByCurrency: [],
+    }
+    home.totalsByCurrency.push({
+      currencyCode: row.currencyCode,
+      amountCents: row.amountCents,
+    })
+    homesById.set(row.id, home)
+  }
+  return c.json({ homes: [...homesById.values()] })
 })
 
 homes.post('/', async (c) => {
@@ -52,7 +93,7 @@ homes.post('/:homeId/members', async (c) => {
     return fail(404, 'Home not found')
   }
   const body = await readJsonObject(c)
-  const name = requireName(body.name)
+  const name = requireMemberName(body.name)
   const id = crypto.randomUUID()
   await c.env.DB.prepare('INSERT INTO members (id, home_id, name) VALUES (?, ?, ?)')
     .bind(id, homeId, name)
@@ -141,16 +182,39 @@ homes.get('/:homeId/balances', async (c) => {
     return fail(404, 'Home not found')
   }
   const { results } = await c.env.DB.prepare(
-    `SELECT m.id AS memberId,
-            m.name AS name,
-            COALESCE(SUM(CASE WHEN s.paid_at IS NULL THEN s.amount_cents END), 0) AS outstandingCents
+    `SELECT m.id AS memberId, m.name,
+            COALESCE(b.currency_code, 'INR') AS currencyCode,
+            COALESCE(SUM(s.amount_cents), 0) AS outstandingCents
        FROM members m
-       LEFT JOIN shares s ON s.member_id = m.id
+       LEFT JOIN shares s ON s.member_id = m.id AND s.paid_at IS NULL
+       LEFT JOIN bills b ON b.id = s.bill_id
       WHERE m.home_id = ?
-      GROUP BY m.id
-      ORDER BY m.position`,
+      GROUP BY m.id, b.currency_code
+      ORDER BY m.position, currencyCode`,
   )
     .bind(homeId)
-    .all<{ memberId: string; name: string; outstandingCents: number }>()
-  return c.json({ balances: results })
+    .all<BalanceCurrencyRow>()
+  const balancesByMember = new Map<
+    string,
+    {
+      memberId: string
+      name: string
+      outstandingByCurrency: { currencyCode: CurrencyCode; amountCents: number }[]
+    }
+  >()
+  for (const row of results) {
+    const balance = balancesByMember.get(row.memberId) ?? {
+      memberId: row.memberId,
+      name: row.name,
+      outstandingByCurrency: [],
+    }
+    if (row.outstandingCents > 0) {
+      balance.outstandingByCurrency.push({
+        currencyCode: row.currencyCode,
+        amountCents: row.outstandingCents,
+      })
+    }
+    balancesByMember.set(row.memberId, balance)
+  }
+  return c.json({ balances: [...balancesByMember.values()] })
 })

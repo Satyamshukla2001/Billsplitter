@@ -3,11 +3,11 @@ import { useCallback, useState } from 'react'
 import { AddForm } from '../components/AddForm'
 import { DeleteButton } from '../components/DeleteButton'
 import { ShareRow } from '../components/ShareRow'
-import { Async, Empty } from '../components/Status'
-import { api, type Balance, type Bill, type Member } from '../lib/api'
+import { Async, Empty, ErrorBox } from '../components/Status'
+import { api, type Balance, type Bill, type CurrencyCode, type Member } from '../lib/api'
 import {
+  aggregateMoney,
   CURRENCIES,
-  type CurrencyCode,
   formatCents,
   isCurrencyCode,
   parseAmountToCents,
@@ -18,10 +18,14 @@ export const Route = createFileRoute('/homes/$homeId')({
   component: HomePage,
 })
 
+function isLettersOnlyMemberName(name: string): boolean {
+  return /^(?:\p{L}\p{M}*)+(?:\s+(?:\p{L}\p{M}*)+)*$/u.test(name.trim())
+}
+
 function HomePage() {
   const { homeId } = Route.useParams()
   const navigate = useNavigate()
-  const [currency, setCurrency] = useState<CurrencyCode>('USD')
+  const [currency, setCurrency] = useState<CurrencyCode>('INR')
 
   const loadHome = useCallback((signal: AbortSignal) => api.getHome(homeId, signal), [homeId])
   const loadBills = useCallback((signal: AbortSignal) => api.listBills(homeId, signal), [homeId])
@@ -29,9 +33,11 @@ function HomePage() {
     (signal: AbortSignal) => api.getBalances(homeId, signal),
     [homeId],
   )
+  const loadExchangeRates = useCallback((signal: AbortSignal) => api.getExchangeRates(signal), [])
   const home = useResource(loadHome)
   const bills = useResource(loadBills)
   const balances = useResource(loadBalances)
+  const exchangeRates = useResource(loadExchangeRates)
 
   const refreshMoney = useCallback(() => {
     bills.reload()
@@ -69,7 +75,7 @@ function HomePage() {
                 balances.reload()
               }}
             />
-            <BalancesSection balances={balances} currency={currency} />
+            <BalancesSection balances={balances} />
             <BillsSection
               members={detail.members}
               bills={bills}
@@ -77,11 +83,13 @@ function HomePage() {
               onCurrencyChange={(value) => {
                 if (isCurrencyCode(value)) setCurrency(value)
               }}
-              onCreate={async (title, totalCents, memberId) => {
-                await api.createBill(homeId, title, totalCents, memberId)
+              onCreate={async (title, totalCents, memberId, currencyCode) => {
+                await api.createBill(homeId, title, totalCents, memberId, currencyCode)
                 refreshMoney()
+                exchangeRates.reload()
               }}
               onPaid={refreshMoney}
+              exchangeRates={exchangeRates}
             />
           </>
         )}
@@ -121,19 +129,19 @@ function MembersSection({
       <AddForm
         fields={[{ name: 'name', label: 'Member name', placeholder: 'Asha' }]}
         submitLabel="Add member"
-        onSubmit={({ name }) => onAdd(name ?? '')}
+        onSubmit={({ name }) => {
+          const memberName = name ?? ''
+          if (!isLettersOnlyMemberName(memberName)) {
+            throw new Error('Member names can contain letters and spaces only.')
+          }
+          return onAdd(memberName)
+        }}
       />
     </section>
   )
 }
 
-function BalancesSection({
-  balances,
-  currency,
-}: {
-  balances: ReturnType<typeof useResource<Balance[]>>
-  currency: CurrencyCode
-}) {
+function BalancesSection({ balances }: { balances: ReturnType<typeof useResource<Balance[]>> }) {
   return (
     <section>
       <h2>Who owes what</h2>
@@ -146,7 +154,15 @@ function BalancesSection({
               {rows.map((row) => (
                 <li key={row.memberId} className="row">
                   <span>{row.name}</span>
-                  <span className="amount">{formatCents(row.outstandingCents, currency)}</span>
+                  <span className="amount">
+                    {row.outstandingByCurrency.length === 0
+                      ? formatCents(0, 'INR')
+                      : row.outstandingByCurrency
+                          .map(({ currencyCode, amountCents }) =>
+                            formatCents(amountCents, currencyCode),
+                          )
+                          .join(' · ')}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -164,15 +180,23 @@ function BillsSection({
   onCurrencyChange,
   onCreate,
   onPaid,
+  exchangeRates,
 }: {
   members: Member[]
   bills: ReturnType<typeof useResource<Bill[]>>
   currency: CurrencyCode
   onCurrencyChange: (currency: string) => void
-  onCreate: (title: string, totalCents: number, memberId: string) => Promise<void>
+  onCreate: (
+    title: string,
+    totalCents: number,
+    memberId: string,
+    currencyCode: CurrencyCode,
+  ) => Promise<void>
   onPaid: () => void
+  exchangeRates: ReturnType<typeof useResource<Awaited<ReturnType<typeof api.getExchangeRates>>>>
 }) {
   const names = new Map(members.map((member) => [member.id, member.name]))
+  const ratesState = exchangeRates.state
 
   return (
     <section>
@@ -190,8 +214,10 @@ function BillsSection({
             {
               name: 'title',
               label: 'Title',
-              placeholder: 'Electricity',
-              suggestions: ['Rent', 'Electricity', 'Water', 'Internet', 'Groceries', 'Gas'],
+              options: ['Rent', 'Electricity', 'Water', 'Internet', 'Groceries', 'Gas'].map(
+                (title) => ({ value: title, label: title }),
+              ),
+              defaultValue: 'Rent',
             },
             {
               name: 'amount',
@@ -200,7 +226,7 @@ function BillsSection({
               inputMode: 'decimal',
               trailingSelect: {
                 name: 'currency',
-                label: 'Display currency',
+                label: 'Bill currency',
                 options: CURRENCIES.map(({ code }) => ({ value: code, label: code })),
                 defaultValue: currency,
               },
@@ -210,20 +236,24 @@ function BillsSection({
           onValueChange={(name, value) => {
             if (name === 'currency') onCurrencyChange(value)
           }}
-          onSubmit={async ({ title, amount, memberId }) => {
-            const cents = parseAmountToCents(amount ?? '')
+          onSubmit={async ({ title, amount, memberId, currency: currencyValue }) => {
+            const selectedCurrency = currencyValue ?? currency
+            const billCurrency = isCurrencyCode(selectedCurrency) ? selectedCurrency : currency
+            const cents = parseAmountToCents(amount ?? '', billCurrency)
             if (cents === null) {
-              throw new Error('Enter a positive amount with at most two decimals, like 45.50.')
+              throw new Error(
+                `Enter a positive ${billCurrency} amount with the correct number of decimal places.`,
+              )
             }
             if (!memberId) throw new Error('Choose a person for this bill.')
-            await onCreate(title ?? '', cents, memberId)
+            await onCreate(title ?? '', cents, memberId, billCurrency)
           }}
         />
       )}
       {members.length === 0 ? null : (
         <p className="muted">
-          Each bill is assigned to the selected person. Currency changes the symbol only; amounts
-          are not converted.
+          Each bill is assigned to the selected person and keeps its selected currency. Mixed
+          currencies are converted to INR using the latest available exchange rates.
         </p>
       )}
       <Async resource={bills.state} loadingLabel="Loading bills…" onRetry={bills.reload}>
@@ -237,7 +267,9 @@ function BillsSection({
                   <li key={bill.id} className="bill">
                     <header>
                       <strong>{bill.title}</strong>
-                      <span className="amount">{formatCents(bill.totalCents, currency)}</span>
+                      <span className="amount">
+                        {formatCents(bill.totalCents, bill.currencyCode)}
+                      </span>
                     </header>
                     <ul className="shares">
                       {bill.shares.map((share) => (
@@ -246,7 +278,7 @@ function BillsSection({
                           billId={bill.id}
                           share={share}
                           memberName={names.get(share.memberId) ?? 'Unknown member'}
-                          currency={currency}
+                          currency={bill.currencyCode}
                           onPaid={onPaid}
                         />
                       ))}
@@ -254,15 +286,48 @@ function BillsSection({
                   </li>
                 ))}
               </ul>
-              <footer className="row bills-total">
-                <strong>Total</strong>
-                <strong className="amount">
-                  {formatCents(
-                    list.reduce((total, bill) => total + bill.totalCents, 0),
-                    currency,
-                  )}
-                </strong>
-              </footer>
+              {(() => {
+                const total = aggregateMoney(
+                  list.map((bill) => ({
+                    currencyCode: bill.currencyCode,
+                    amountCents: bill.totalCents,
+                  })),
+                  ratesState.status === 'success' ? ratesState.data.rates : undefined,
+                )
+                if (!total && ratesState.status === 'error') {
+                  return (
+                    <ErrorBox
+                      message="Cannot calculate a mixed-currency total because exchange rates are unavailable."
+                      onRetry={exchangeRates.reload}
+                    />
+                  )
+                }
+                if (!total) {
+                  return (
+                    <p className="muted" role="status">
+                      Loading exchange rates to calculate total in INR…
+                    </p>
+                  )
+                }
+
+                const hasMixedCurrencies = new Set(list.map((bill) => bill.currencyCode)).size > 1
+                return (
+                  <>
+                    <footer className="row bills-total">
+                      <strong>{hasMixedCurrencies ? 'Total (INR)' : 'Total'}</strong>
+                      <strong className="amount">
+                        {formatCents(total.amountCents, total.currencyCode)}
+                      </strong>
+                    </footer>
+                    {hasMixedCurrencies && ratesState.status === 'success' ? (
+                      <p className="muted">
+                        Mixed-currency total uses exchange rates updated {ratesState.data.updatedAt}
+                        .
+                      </p>
+                    ) : null}
+                  </>
+                )
+              })()}
             </>
           )
         }

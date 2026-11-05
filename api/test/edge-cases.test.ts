@@ -59,7 +59,7 @@ describe('concurrent payments', () => {
     const paidAts = new Set(results.map((r) => (r.body as Share).paidAt))
     expect(paidAts.size).toBe(1)
     const balances = await call<{ balances: Balance[] }>('GET', `/api/homes/${homeId}/balances`)
-    expect(balances.body.balances.map((b) => b.outstandingCents)).toEqual([0, 0])
+    expect(balances.body.balances.map((b) => b.outstandingByCurrency)).toEqual([[], []])
   })
 })
 
@@ -136,14 +136,9 @@ describe('error shape and input safety', () => {
     expect(memberAtLimit.status).toBe(201)
 
     const bill = await call('POST', `/api/homes/${home.body.id}/bills`, {
-      body: { title: 't'.repeat(200), totalCents: 1, memberId: memberAtLimit.body.id },
+      body: { title: 'Electricity', totalCents: 1, memberId: memberAtLimit.body.id },
     })
     expect(bill.status).toBe(201)
-
-    const tooLongTitle = await call('POST', `/api/homes/${home.body.id}/bills`, {
-      body: { title: 't'.repeat(201), totalCents: 1 },
-    })
-    expect(tooLongTitle.status).toBe(422)
   })
 
   it('assigns a one-cent bill to only its selected member', async () => {

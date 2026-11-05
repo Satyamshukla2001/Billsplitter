@@ -1,4 +1,7 @@
 export type Home = { id: string; name: string }
+export type HomeSummary = Home & {
+  totalsByCurrency: { currencyCode: CurrencyCode; amountCents: number }[]
+}
 export type Member = { id: string; homeId: string; name: string }
 export type HomeDetail = Home & { members: Member[] }
 export type Share = { id: string; memberId: string; amountCents: number; paidAt: string | null }
@@ -7,9 +10,20 @@ export type Bill = {
   homeId: string
   title: string
   totalCents: number
+  currencyCode: CurrencyCode
   shares: Share[]
 }
-export type Balance = { memberId: string; name: string; outstandingCents: number }
+export type CurrencyCode = 'USD' | 'INR' | 'EUR' | 'GBP' | 'CAD' | 'AUD' | 'JPY' | 'AED'
+export type Balance = {
+  memberId: string
+  name: string
+  outstandingByCurrency: { currencyCode: CurrencyCode; amountCents: number }[]
+}
+export type ExchangeRates = {
+  baseCode: 'INR'
+  rates: Record<CurrencyCode, number>
+  updatedAt: string
+}
 
 const REQUEST_TIMEOUT_MS = 10_000
 
@@ -87,7 +101,7 @@ export function errorMessage(error: unknown): string {
 
 export const api = {
   listHomes: (signal: AbortSignal) =>
-    request<{ homes: Home[] }>('/api/homes', { signal }).then((r) => r.homes),
+    request<{ homes: HomeSummary[] }>('/api/homes', { signal }).then((r) => r.homes),
   createHome: (name: string) => request<Home>('/api/homes', { method: 'POST', body: { name } }),
   deleteHome: (homeId: string) =>
     request<{ deleted: true; id: string; name: string }>(
@@ -112,11 +126,19 @@ export const api = {
     request<{ bills: Bill[] }>(`/api/homes/${encodeURIComponent(homeId)}/bills`, { signal }).then(
       (r) => r.bills,
     ),
-  createBill: (homeId: string, title: string, totalCents: number, memberId: string) =>
+  createBill: (
+    homeId: string,
+    title: string,
+    totalCents: number,
+    memberId: string,
+    currencyCode: CurrencyCode,
+  ) =>
     request<Bill>(`/api/homes/${encodeURIComponent(homeId)}/bills`, {
       method: 'POST',
-      body: { title, totalCents, memberId },
+      body: { title, totalCents, memberId, currencyCode },
     }),
+  getExchangeRates: (signal: AbortSignal) =>
+    request<ExchangeRates>('/api/exchange-rates', { signal }),
   getBalances: (homeId: string, signal: AbortSignal) =>
     request<{ balances: Balance[] }>(`/api/homes/${encodeURIComponent(homeId)}/balances`, {
       signal,

@@ -10,7 +10,7 @@ A household expense-sharing app for organizing homes, recording bills, and track
 - Track outstanding balances and record payments.
 - Retry failed payments safely.
 - Change the displayed currency symbol without changing stored amounts.
-## Technology
+
 ## Technology
 
 - **Web:** React, TypeScript, Vite, and TanStack Router
@@ -37,13 +37,13 @@ Open [http://localhost:5173](http://localhost:5173). The development command sta
 
 ## Available commands
 
-| Command | Description |
-| --- | --- |
-| `pnpm dev` | Start the web app and API for local development. |
-| `pnpm check` | Run Biome checks. |
-| `pnpm typecheck` | Type-check the project packages. |
-| `pnpm test` | Run the API test suite. |
-| `pnpm build` | Build the web app for production. |
+| Command          | Description                                      |
+| ---------------- | ------------------------------------------------ |
+| `pnpm dev`       | Start the web app and API for local development. |
+| `pnpm check`     | Run Biome checks.                                |
+| `pnpm typecheck` | Type-check the project packages.                 |
+| `pnpm test`      | Run the API test suite.                          |
+| `pnpm build`     | Build the web app for production.                |
 
 ## Project layout
 

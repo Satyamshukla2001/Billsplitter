@@ -6,7 +6,7 @@ A household expense-sharing app for organizing homes, recording bills, and track
 
 - Create and manage multiple homes.
 - Add and remove housemates.
-- Record bills and split each amount between members.
+- Record bills for a specific housemate and track their balance.
 - Track outstanding balances and record payments.
 - Retry failed payments safely.
 - Change the displayed currency symbol without changing stored amounts.

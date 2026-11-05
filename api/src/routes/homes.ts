@@ -71,7 +71,42 @@ homes.delete('/:homeId/members/:memberId', async (c) => {
     .first()
   if (!member) return fail(404, 'Member not found')
 
+  const { results: exclusivelyAssignedBills } = await db
+    .prepare(
+      `SELECT b.id
+         FROM bills b
+        WHERE b.home_id = ?
+          AND EXISTS (
+            SELECT 1 FROM shares
+             WHERE shares.bill_id = b.id
+               AND shares.member_id = ?
+               AND shares.home_id = ?
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM shares
+             WHERE shares.bill_id = b.id
+               AND shares.member_id != ?
+               AND shares.home_id = ?
+          )`,
+    )
+    .bind(homeId, memberId, homeId, memberId, homeId)
+    .all<{ id: string }>()
+
   await db.batch([
+    ...exclusivelyAssignedBills.flatMap(({ id }) => [
+      db
+        .prepare('DELETE FROM shares WHERE bill_id = ? AND member_id = ? AND home_id = ?')
+        .bind(id, memberId, homeId),
+      db
+        .prepare(
+          `DELETE FROM bills
+            WHERE id = ? AND home_id = ?
+              AND NOT EXISTS (
+                SELECT 1 FROM shares WHERE shares.bill_id = bills.id
+              )`,
+        )
+        .bind(id, homeId),
+    ]),
     db.prepare('DELETE FROM shares WHERE member_id = ? AND home_id = ?').bind(memberId, homeId),
     db.prepare('DELETE FROM members WHERE id = ? AND home_id = ?').bind(memberId, homeId),
   ])

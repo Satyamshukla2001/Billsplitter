@@ -7,7 +7,6 @@ import {
   requireTitle,
   requireTotalCents,
 } from '../lib/http'
-import { splitCents } from '../lib/split'
 
 type ShareRow = { id: string; memberId: string; amountCents: number; paidAt: string | null }
 type BillRow = { id: string; homeId: string; title: string; totalCents: number }
@@ -32,21 +31,24 @@ bills.post('/homes/:homeId/bills', async (c) => {
   const body = await readJsonObject(c)
   const title = requireTitle(body.title)
   const totalCents = requireTotalCents(body.totalCents)
+  if (typeof body.memberId !== 'string' || body.memberId.length === 0) {
+    return fail(422, 'Choose a member from this home')
+  }
+  const member = await db
+    .prepare('SELECT id FROM members WHERE id = ? AND home_id = ?')
+    .bind(body.memberId, homeId)
+    .first<{ id: string }>()
+  if (!member) return fail(422, 'Choose a member from this home')
 
-  const { results: members } = await db
-    .prepare('SELECT id FROM members WHERE home_id = ? ORDER BY position')
-    .bind(homeId)
-    .all<{ id: string }>()
-  if (members.length === 0) return fail(422, 'Cannot create a bill for a home with no members')
-
-  const amounts = splitCents(totalCents, members.length)
   const billId = crypto.randomUUID()
-  const shares: ShareRow[] = members.map((member, index) => ({
-    id: crypto.randomUUID(),
-    memberId: member.id,
-    amountCents: amounts[index] ?? 0,
-    paidAt: null,
-  }))
+  const shares: ShareRow[] = [
+    {
+      id: crypto.randomUUID(),
+      memberId: member.id,
+      amountCents: totalCents,
+      paidAt: null,
+    },
+  ]
 
   // One batch = one transaction: either the bill and all its shares exist, or nothing does.
   await db.batch([
@@ -74,8 +76,13 @@ bills.get('/homes/:homeId/bills', async (c) => {
   const [billRows, shareRows] = await db.batch<BillRow | ShareWithBill>([
     db
       .prepare(
-        `SELECT id, home_id AS homeId, title, total_cents AS totalCents
-           FROM bills WHERE home_id = ? ORDER BY created_at DESC, rowid DESC`,
+        `SELECT b.id, b.home_id AS homeId, b.title,
+                SUM(s.amount_cents) AS totalCents
+           FROM bills b
+           JOIN shares s ON s.bill_id = b.id AND s.home_id = b.home_id
+          WHERE b.home_id = ?
+          GROUP BY b.id
+          ORDER BY b.created_at DESC, b.rowid DESC`,
       )
       .bind(homeId),
     db

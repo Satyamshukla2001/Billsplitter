@@ -5,9 +5,11 @@ import { ErrorBox } from './Status'
 type Field = {
   name: string
   label: string
-  placeholder: string
+  placeholder?: string
   inputMode?: 'decimal'
   suggestions?: string[]
+  options?: { value: string; label: string }[]
+  defaultValue?: string
   trailingSelect?: {
     name: string
     label: string
@@ -18,9 +20,14 @@ type Field = {
 
 function defaultValues(fields: Field[]): Record<string, string> {
   return Object.fromEntries(
-    fields.flatMap((field) =>
-      field.trailingSelect ? [[field.trailingSelect.name, field.trailingSelect.defaultValue]] : [],
-    ),
+    fields.flatMap((field) => [
+      ...(field.options && field.defaultValue !== undefined
+        ? [[field.name, field.defaultValue]]
+        : []),
+      ...(field.trailingSelect
+        ? [[field.trailingSelect.name, field.trailingSelect.defaultValue]]
+        : []),
+    ]),
   )
 }
 
@@ -76,7 +83,21 @@ export function AddForm({
         {fields.map((field) => (
           <div className="field" key={field.name}>
             <label htmlFor={`${id}-${field.name}`}>{field.label}</label>
-            {field.trailingSelect ? (
+            {field.options ? (
+              <select
+                id={`${id}-${field.name}`}
+                value={values[field.name] ?? field.defaultValue ?? ''}
+                onChange={(event) => updateValue(field.name, event.target.value)}
+                disabled={pending}
+                required
+              >
+                {field.options.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : field.trailingSelect ? (
               <span className="input-with-select">
                 <input
                   id={`${id}-${field.name}`}

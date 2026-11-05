@@ -77,8 +77,8 @@ function HomePage() {
               onCurrencyChange={(value) => {
                 if (isCurrencyCode(value)) setCurrency(value)
               }}
-              onCreate={async (title, totalCents) => {
-                await api.createBill(homeId, title, totalCents)
+              onCreate={async (title, totalCents, memberId) => {
+                await api.createBill(homeId, title, totalCents, memberId)
                 refreshMoney()
               }}
               onPaid={refreshMoney}
@@ -169,7 +169,7 @@ function BillsSection({
   bills: ReturnType<typeof useResource<Bill[]>>
   currency: CurrencyCode
   onCurrencyChange: (currency: string) => void
-  onCreate: (title: string, totalCents: number) => Promise<void>
+  onCreate: (title: string, totalCents: number, memberId: string) => Promise<void>
   onPaid: () => void
 }) {
   const names = new Map(members.map((member) => [member.id, member.name]))
@@ -179,7 +179,14 @@ function BillsSection({
       <h2>Bills</h2>
       {members.length === 0 ? null : (
         <AddForm
+          key={members.map((member) => member.id).join(':')}
           fields={[
+            {
+              name: 'memberId',
+              label: 'Person',
+              options: members.map((member) => ({ value: member.id, label: member.name })),
+              defaultValue: members[0]?.id,
+            },
             {
               name: 'title',
               label: 'Title',
@@ -203,45 +210,60 @@ function BillsSection({
           onValueChange={(name, value) => {
             if (name === 'currency') onCurrencyChange(value)
           }}
-          onSubmit={async ({ title, amount }) => {
+          onSubmit={async ({ title, amount, memberId }) => {
             const cents = parseAmountToCents(amount ?? '')
             if (cents === null) {
               throw new Error('Enter a positive amount with at most two decimals, like 45.50.')
             }
-            await onCreate(title ?? '', cents)
+            if (!memberId) throw new Error('Choose a person for this bill.')
+            await onCreate(title ?? '', cents, memberId)
           }}
         />
       )}
       {members.length === 0 ? null : (
-        <p className="muted">Currency changes the symbol only; amounts are not converted.</p>
+        <p className="muted">
+          Each bill is assigned to the selected person. Currency changes the symbol only; amounts
+          are not converted.
+        </p>
       )}
       <Async resource={bills.state} loadingLabel="Loading bills…" onRetry={bills.reload}>
         {(list) =>
           list.length === 0 ? (
             <Empty>No bills yet.</Empty>
           ) : (
-            <ul className="bills">
-              {list.map((bill) => (
-                <li key={bill.id} className="bill">
-                  <header>
-                    <strong>{bill.title}</strong>
-                    <span className="amount">{formatCents(bill.totalCents, currency)}</span>
-                  </header>
-                  <ul className="shares">
-                    {bill.shares.map((share) => (
-                      <ShareRow
-                        key={share.id}
-                        billId={bill.id}
-                        share={share}
-                        memberName={names.get(share.memberId) ?? 'Unknown member'}
-                        currency={currency}
-                        onPaid={onPaid}
-                      />
-                    ))}
-                  </ul>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="bills">
+                {list.map((bill) => (
+                  <li key={bill.id} className="bill">
+                    <header>
+                      <strong>{bill.title}</strong>
+                      <span className="amount">{formatCents(bill.totalCents, currency)}</span>
+                    </header>
+                    <ul className="shares">
+                      {bill.shares.map((share) => (
+                        <ShareRow
+                          key={share.id}
+                          billId={bill.id}
+                          share={share}
+                          memberName={names.get(share.memberId) ?? 'Unknown member'}
+                          currency={currency}
+                          onPaid={onPaid}
+                        />
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <footer className="row bills-total">
+                <strong>Total</strong>
+                <strong className="amount">
+                  {formatCents(
+                    list.reduce((total, bill) => total + bill.totalCents, 0),
+                    currency,
+                  )}
+                </strong>
+              </footer>
+            </>
           )
         }
       </Async>

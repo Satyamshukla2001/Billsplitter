@@ -113,17 +113,6 @@ button {
   display: flex;
 }
 
-.input-with-select select {
-  max-width: 6rem;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-left: 0;
-  border-radius: 0 6px 6px 0;
-  background: var(--bg);
-  color: var(--text);
-  font: inherit;
-}
-
 button:disabled {
   opacity: 0.6;
   cursor: progress;
@@ -137,6 +126,27 @@ input {
   background: var(--bg);
   color: var(--text);
   width: 100%;
+}
+
+select {
+  font: inherit;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--text);
+  width: 100%;
+}
+
+.input-with-select select {
+  max-width: 6rem;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 6px 6px 0;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
 }
 
 .input-with-select input {
@@ -196,6 +206,12 @@ input {
   border-radius: 8px;
   padding: 12px;
   margin-top: 12px;
+}
+
+.bills-total {
+  border-top: 1px solid var(--line);
+  margin-top: 16px;
+  padding-top: 12px;
 }
 
 .share {

@@ -49,7 +49,7 @@ describe('pay a share', () => {
     expect(second.status).toBe(200)
     expect(second.body.paidAt).toBe(first.body.paidAt)
     const outstanding = await balances(homeId)
-    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([0, 500])
+    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([0, 0])
   })
 
   it('rejects a second payment of an already paid share with a different key', async () => {
@@ -86,19 +86,19 @@ describe('balances', () => {
 
     expect(outstanding.status).toBe(200)
     expect(outstanding.body.balances).toEqual([
-      { memberId: members[0]?.id, name: 'Asha', outstandingCents: 500 },
-      { memberId: members[1]?.id, name: 'Ben', outstandingCents: 500 },
+      { memberId: members[0]?.id, name: 'Asha', outstandingCents: 1000 },
+      { memberId: members[1]?.id, name: 'Ben', outstandingCents: 0 },
     ])
   })
 
   it('adds up the unpaid shares of several bills', async () => {
-    const { homeId, billId, firstShare } = await setup()
-    await createBill(homeId, 300)
+    const { homeId, members, billId, firstShare } = await setup()
+    await createBill(homeId, 300, members[1]?.id)
     await pay(billId, firstShare.id, crypto.randomUUID())
 
     const outstanding = await balances(homeId)
 
-    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([150, 650])
+    expect(outstanding.body.balances.map((balance) => balance.outstandingCents)).toEqual([0, 300])
   })
 
   it('returns 404 when the home does not exist', async () => {

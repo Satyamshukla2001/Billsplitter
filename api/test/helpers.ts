@@ -50,8 +50,18 @@ export async function createHome(memberNames: string[]) {
   return { homeId: home.body.id, members }
 }
 
-export async function createBill(homeId: string, totalCents: number) {
+export async function createBill(homeId: string, totalCents: number, memberId?: string) {
+  let selectedMemberId = memberId
+  if (selectedMemberId === undefined) {
+    const home = await call<{ members: Member[] }>('GET', `/api/homes/${homeId}`)
+    if (home.status === 200) selectedMemberId = home.body.members[0]?.id
+  }
+
   return call<Bill>('POST', `/api/homes/${homeId}/bills`, {
-    body: { title: 'Electricity', totalCents },
+    body: {
+      title: 'Electricity',
+      totalCents,
+      ...(selectedMemberId === undefined ? {} : { memberId: selectedMemberId }),
+    },
   })
 }

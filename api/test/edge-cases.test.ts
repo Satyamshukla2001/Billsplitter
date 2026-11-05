@@ -59,7 +59,7 @@ describe('concurrent payments', () => {
     const paidAts = new Set(results.map((r) => (r.body as Share).paidAt))
     expect(paidAts.size).toBe(1)
     const balances = await call<{ balances: Balance[] }>('GET', `/api/homes/${homeId}/balances`)
-    expect(balances.body.balances.map((b) => b.outstandingCents)).toEqual([0, 500])
+    expect(balances.body.balances.map((b) => b.outstandingCents)).toEqual([0, 0])
   })
 })
 
@@ -130,13 +130,13 @@ describe('error shape and input safety', () => {
     })
     expect(member.status).toBe(422)
 
-    const memberAtLimit = await call('POST', `/api/homes/${home.body.id}/members`, {
+    const memberAtLimit = await call<{ id: string }>('POST', `/api/homes/${home.body.id}/members`, {
       body: { name: 'm'.repeat(100) },
     })
     expect(memberAtLimit.status).toBe(201)
 
     const bill = await call('POST', `/api/homes/${home.body.id}/bills`, {
-      body: { title: 't'.repeat(200), totalCents: 1 },
+      body: { title: 't'.repeat(200), totalCents: 1, memberId: memberAtLimit.body.id },
     })
     expect(bill.status).toBe(201)
 
@@ -146,13 +146,13 @@ describe('error shape and input safety', () => {
     expect(tooLongTitle.status).toBe(422)
   })
 
-  it('preserves a one-cent bill when there are more members than cents', async () => {
+  it('assigns a one-cent bill to only its selected member', async () => {
     const { homeId, members } = await createHome(['Asha', 'Ben', 'Chitra', 'Dev'])
-    const bill = await createBill(homeId, 1)
+    const bill = await createBill(homeId, 1, members[2]?.id)
 
     expect(bill.status).toBe(201)
-    expect(bill.body.shares.map((share) => share.memberId)).toEqual(members.map((m) => m.id))
-    expect(bill.body.shares.map((share) => share.amountCents)).toEqual([1, 0, 0, 0])
+    expect(bill.body.shares.map((share) => share.memberId)).toEqual([members[2]?.id])
+    expect(bill.body.shares.map((share) => share.amountCents)).toEqual([1])
     expect(bill.body.shares.reduce((sum, share) => sum + share.amountCents, 0)).toBe(1)
   })
 

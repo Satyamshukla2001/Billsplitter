@@ -112,10 +112,10 @@ export const api = {
     request<{ bills: Bill[] }>(`/api/homes/${encodeURIComponent(homeId)}/bills`, { signal }).then(
       (r) => r.bills,
     ),
-  createBill: (homeId: string, title: string, totalCents: number) =>
+  createBill: (homeId: string, title: string, totalCents: number, memberId: string) =>
     request<Bill>(`/api/homes/${encodeURIComponent(homeId)}/bills`, {
       method: 'POST',
-      body: { title, totalCents },
+      body: { title, totalCents, memberId },
     }),
   getBalances: (homeId: string, signal: AbortSignal) =>
     request<{ balances: Balance[] }>(`/api/homes/${encodeURIComponent(homeId)}/balances`, {
